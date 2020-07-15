@@ -1,6 +1,3 @@
-// http://dropbox.github.io/dropbox-sdk-js/Dropbox.html
-// API explorer: https://dropbox.github.io/dropbox-api-v2-explorer/
-
 import 'isomorphic-fetch'
 import { Dropbox } from 'dropbox'
 // import promise from 'es6-promise'
@@ -13,14 +10,40 @@ const dbx = new Dropbox({
 
 const fileListElem = document.querySelector('.js-file-list')
 const loadingElem = document.querySelector('.js-loading')
+const rootPathForm = document.querySelector('.js-root-path__form')
+const rootPathInput = document.querySelector('.js-root-path__input')
+const organizeBtn = document.querySelector('.js-organize-btn')
+
+rootPathForm.addEventListener('submit', e => {
+  e.preventDefault()
+  state.rootPath = rootPathInput.value === '/' ? '' : rootPathInput.value.toLowerCase()
+  reset()
+})
+
+organizeBtn.addEventListener('click', async e => {
+  const originalMsg = e.target.innerHTML
+  e.target.disabled = true
+  e.target.innerHTML = 'Working...'
+  await moveFilesToDatedFolders()
+  e.target.disabled = false
+  e.target.innerHTML = originalMsg
+  reset()
+})
+
+const reset = () => {
+  state.files = []
+  loadingElem.classList.remove('hidden')
+  init()
+}
 
 const state = {
-  files: []
+  files: [],
+  rootPath: ''
 }
 
 const init = async () => {
   const res = await dbx.filesListFolder({
-    path: '',
+    path: state.rootPath,
     limit: 20
   })
   updateFiles(res.entries)
@@ -94,10 +117,34 @@ const getThumbnails = async files => {
     // figure out the index of the file we need to update
     let indexToUpdate = state.files.findIndex(stateFile => file.metadata.path_lower === stateFile.path_lower)
     // put a .thumbnail property on the corresponding file
-    newStateFiles[indexToUpdate].thumbnail = file.thumbnail
+    if (newStateFiles[indexToUpdate]) newStateFiles[indexToUpdate].thumbnail = file.thumbnail
   })
   state.files = newStateFiles
   renderFiles()
+}
+
+const moveFilesToDatedFolders = async () => {
+  const entries = state.files
+    .filter(file => file['.tag'] === 'file')
+    .map(file => {
+      const date = new Date(file.client_modified)
+      return {
+        from_path: file.path_lower,
+        to_path: `${state.rootPath}/${date.getFullYear()}/${date.getUTCMonth() + 1}/${file.name}`
+      }
+    })
+  try {
+    let res = await dbx.filesMoveBatchV2({ entries })
+    const { async_job_id } = res
+    if (async_job_id) {
+      do {
+        res = await dbx.filesMoveBatchCheckV2({ async_job_id })
+        console.log(res)
+      } while (res['.tag'] === 'in_progress')
+    }
+  } catch (err) {
+    console.error(err)
+  }
 }
 
 init()
