@@ -24,6 +24,6 @@
     "babel-plugin-transform-runtime": "^6.23.0",
     "babel-preset-env": "*",
     "babel-preset-react": "*",
-    "webpack": "^2.0"
+    "webpack": "^5.75"
   }
 }
